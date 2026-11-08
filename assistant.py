@@ -1,178 +1,71 @@
-
 import os
-import sqlite3
-from datetime import datetime
+import requests
 
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+BASE = None
+API_KEY = None
 
-BASE = os.path.expanduser("~/jarvis")
-DB = os.path.join(BASE, "memory", "jarvis.db")
-
-load_dotenv(os.path.join(BASE, ".env"))
-
-API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = os.getenv("GEMINI_MODEL")
-
-if not API_KEY or not MODEL:
-    raise SystemExit("API Key or Model missing in .env")
-
-client = genai.Client(api_key=API_KEY)
-
-os.makedirs(os.path.dirname(DB), exist_ok=True)
-
-conn = sqlite3.connect(DB)
-cur = conn.cursor()
-
-cur.execute("""
-CREATE TABLE IF NOT EXISTS conversations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user TEXT,
-    assistant TEXT,
-    created_at TEXT
-)
-""")
-conn.commit()
+MODEL = "gemini-2.5-flash"
 
 
-SYSTEM_PROMPT = """
-तुझे नाव हॅप्पी आहे.
-तू माझा वैयक्तिक कृत्रिम बुद्धिमत्ता सहाय्यक आहेस.
+def initialize(user_data_dir):
+    global BASE, API_KEY
 
-भाषेसंबंधी अत्यंत महत्त्वाचे नियम:
+    BASE = user_data_dir
+    os.makedirs(BASE, exist_ok=True)
 
-1. प्रत्येक उत्तर फक्त मराठी भाषेत दे.
-2. देवनागरी लिपीमध्येच लिही.
-3. इंग्रजी भाषेत उत्तर देऊ नकोस.
-4. शक्यतो इंग्रजी शब्द वापरू नकोस.
-5. तांत्रिक शब्दांसाठी सोपे मराठी पर्याय वापर.
-6. कोड आवश्यक असेल तेव्हाच इंग्रजीमध्ये दे.
-7. उत्तर नैसर्गिक, स्पष्ट आणि बोलण्यास योग्य ठेव.
-8. मला नेहमी बॉस म्हणून संबोध.
+    key_file = os.path.join(BASE, "api_key.txt")
 
-तुझी कामे:
-- प्रश्नांची उत्तरे देणे.
-- तांत्रिक समस्या सोडवणे.
-- प्रोग्रामिंगमध्ये मदत करणे.
-- नवीन कल्पना सुचवणे.
-- मोबाईल वापरण्यास मदत करणे.
-
-तू नेहमी मराठीतच संवाद साध.
-"""
+    if os.path.exists(key_file):
+        with open(key_file, "r") as f:
+            API_KEY = f.read().strip()
 
 
-def get_history(limit=10):
-    cur.execute("""
-        SELECT user, assistant
-        FROM conversations
-        ORDER BY id DESC LIMIT ?
-    """, (limit,))
+def set_api_key(key):
+    global API_KEY
 
-    rows = cur.fetchall()[::-1]
-    history = []
+    API_KEY = key.strip()
 
-    for user, assistant in rows:
-        history.append(
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=user)]
-            )
-        )
-        history.append(
-            types.Content(
-                role="model",
-                parts=[types.Part.from_text(text=assistant)]
-            )
-        )
+    if BASE:
+        key_file = os.path.join(BASE, "api_key.txt")
 
-    return history
+        with open(key_file, "w") as f:
+            f.write(API_KEY)
 
-
-def save_chat(user, answer):
-    cur.execute("""
-        INSERT INTO conversations
-        (user, assistant, created_at)
-        VALUES (?, ?, ?)
-    """, (user, answer, datetime.now().isoformat()))
-
-    conn.commit()
 
 def ask_jarvis(message):
-    history = get_history()
 
-    history.append(
-        types.Content(
-            role="user",
-            parts=[types.Part.from_text(text=message)]
-        )
+    if not API_KEY:
+        return "बॉस, आधी Gemini API Key सेट करा."
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        + MODEL + ":generateContent"
     )
 
-    print("\nJARVIS: ", end="", flush=True)
-
-    answer = ""
-
     try:
-        response = client.models.generate_content_stream(
-            model=MODEL,
-            contents=history,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                max_output_tokens=1200,
-                temperature=0.7
-            )
+        response = requests.post(
+            url,
+            params={"key": API_KEY},
+            json={
+                "system_instruction": {
+                    "parts": [{
+                        "text": "तुझे नाव हॅप्पी आहे. "
+                        "तू माझा वैयक्तिक सहाय्यक आहेस. "
+                        "नेहमी सोप्या मराठी भाषेत उत्तर दे."
+                    }]
+                },
+                "contents": [{
+                    "parts": [{"text": message}]
+                }]
+            },
+            timeout=60
         )
 
-        for chunk in response:
-            if chunk.text:
-                print(chunk.text, end="", flush=True)
-                answer += chunk.text
+        response.raise_for_status()
 
-        print()
+        data = response.json()
 
-        if answer.strip():
-            save_chat(message, answer)
-
-        return answer
+        return data["candidates"][0]["content"]["parts"][0]["text"]
 
     except Exception as error:
-        print("\nJARVIS ERROR:", str(error))
-        return "Sorry Boss, connection problem."
-
-
-def main():
-    print("""
-====================================
-          JARVIS AI
-====================================
-ENGINE  : GOOGLE GEMINI
-MODE    : ONLINE
-MEMORY  : ENABLED
-STATUS  : READY
-
-Type exit to quit.
-====================================
-""")
-
-    while True:
-        try:
-            message = input("\nBoss: ").strip()
-
-            if not message:
-                continue
-
-            if message.lower() in ["exit", "quit", "bye"]:
-                print("JARVIS: Goodbye Boss!")
-                break
-
-            ask_jarvis(message)
-
-        except KeyboardInterrupt:
-            print("\nJARVIS stopped.")
-            break
-
-    conn.close()
-
-
-if __name__ == "__main__":
-    main()
+        return "बॉस, काही अडचण आली: " + str(error)
