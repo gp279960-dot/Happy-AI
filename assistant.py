@@ -4,7 +4,7 @@ import requests
 BASE = None
 API_KEY = None
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-flash-lite-latest"
 
 
 def initialize(user_data_dir):

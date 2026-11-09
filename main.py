@@ -1,12 +1,20 @@
+import os
 import threading
+
 from kivy.app import App
-from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
+from kivy.clock import Clock
 
 from assistant import initialize, set_api_key, ask_jarvis
+
+FONT_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "assets",
+    "NotoSansDevanagari-Regular.ttf"
+)
 
 
 class HappyAI(App):
@@ -23,6 +31,7 @@ class HappyAI(App):
 
         layout.add_widget(Label(
             text="😊 HAPPY AI",
+            font_name=FONT_PATH,
             font_size=30,
             size_hint_y=0.12
         ))
@@ -31,17 +40,21 @@ class HappyAI(App):
             hint_text="Gemini API Key",
             password=True,
             multiline=False,
+            font_name=FONT_PATH,
             size_hint_y=0.10
         )
 
         api_button = Button(
             text="API Key सेट करा",
+            font_name=FONT_PATH,
             size_hint_y=0.10
         )
         api_button.bind(on_press=self.set_key)
 
         self.output = Label(
             text="नमस्कार बॉस! मी हॅप्पी आहे.",
+            font_name=FONT_PATH,
+            font_size=20,
             halign="left",
             valign="top"
         )
@@ -50,11 +63,13 @@ class HappyAI(App):
         self.message = TextInput(
             hint_text="बॉस, येथे प्रश्न लिहा...",
             multiline=False,
+            font_name=FONT_PATH,
             size_hint_y=0.12
         )
 
         send = Button(
             text="पाठवा",
+            font_name=FONT_PATH,
             size_hint_y=0.12
         )
         send.bind(on_press=self.send_message)
@@ -69,12 +84,14 @@ class HappyAI(App):
 
     def set_key(self, instance):
         key = self.api_input.text.strip()
+
         if key:
             set_api_key(key)
             self.output.text = "बॉस, API Key सेट झाली!"
 
     def send_message(self, instance):
         question = self.message.text.strip()
+
         if not question:
             return
 
@@ -89,6 +106,7 @@ class HappyAI(App):
 
     def get_answer(self, question):
         answer = ask_jarvis(question)
+
         Clock.schedule_once(
             lambda dt: self.show_answer(question, answer)
         )
